@@ -71,6 +71,7 @@ class TravelState(TypedDict):
     hotel_results: str
     itinerary: str
     llm_calls: int
+    weather_results:str
 
 
 # =========================
@@ -121,12 +122,14 @@ Return concise travel guidance.
 
 # Flight Agent
 def flight_agent(state: TravelState):
-    print("\nINSIDE FLIGHT AGENT\n")
+    print("\n" + "="*50)
+    print("📍 [FLIGHT AGENT] Started")
+    print("="*50)
 
     query = state["user_query"]
+    print(f"User Query: {query}")
 
     try:
-
         airports = asyncio.run(
             aviation_mcp_call(
                 "list_airports"
@@ -138,7 +141,6 @@ def flight_agent(state: TravelState):
                 "list_airlines"
             )
         )
-
 
         print("\nAIRPORTS:", airports)
         print("\nAIRLINES:", airlines)
@@ -157,9 +159,10 @@ def flight_agent(state: TravelState):
         ])
 
         flight_data = response.content
+        print("✅ [FLIGHT AGENT] Flight guidance generated successfully")
 
     except Exception as e:
-
+        print(f"❌ [FLIGHT AGENT] Error: {e}")
         flight_data = f"Flight information unavailable: {str(e)}"
 
     return {
@@ -179,9 +182,21 @@ def flight_agent(state: TravelState):
 # =========================
 
 def hotel_agent(state: TravelState):
+    print("\n" + "="*50)
+    print("🏨 [HOTEL AGENT] Started")
+    print("="*50)
+
     query = f"Best hotels for {state['user_query']}"
-    # hotel_results = tavily_search(query)
-    hotel_results = asyncio.run(tavily_mcp_search(query))
+    print(f"Hotel Search Query: {query}")
+
+    try:
+        hotel_results = asyncio.run(tavily_mcp_search(query))
+        print(f"\nHOTEL RESULTS (snippet): {str(hotel_results)[:400]}...")
+        print("✅ [HOTEL AGENT] Hotels fetched successfully")
+    except Exception as e:
+        print(f"❌ [HOTEL AGENT] Error: {e}")
+        hotel_results = f"Hotel information unavailable: {str(e)}"
+
     return {
         "hotel_results": hotel_results,
         "messages": [
@@ -191,6 +206,51 @@ def hotel_agent(state: TravelState):
     }
 
 
+# =========================
+# Weather Agent
+# =========================
+
+def weather_agent(state: TravelState):
+    print("\n" + "="*50)
+    print("☀️ [WEATHER AGENT] Started")
+    print("="*50)
+
+    try:
+        city = extract_destination(state["user_query"])
+        print(f"Extracted City: {city}")
+
+        weather_data = asyncio.run(
+            weather_mcp_search(city)
+        )
+        print(f"\nCURRENT WEATHER: {weather_data}")
+
+        forecast_data = asyncio.run(
+            forecast_mcp_search(city)
+        )
+        print(f"\nFORECAST: {forecast_data}")
+
+        weather_results = f"""
+        Current Weather for {city}:
+        {weather_data}
+
+        Forecast for {city}:
+        {forecast_data}
+        """
+        print("✅ [WEATHER AGENT] Weather & Forecast fetched successfully")
+    except Exception as e:
+        print(f"❌ [WEATHER AGENT] Error: {e}")
+        weather_results = f"Live weather data currently unavailable: {str(e)}"
+
+    return {
+        "weather_results": weather_results,
+        "messages": [
+            AIMessage(
+                content="Weather information fetched"
+            )
+        ],
+        "llm_calls": state.get("llm_calls", 0) + 1
+    }
+
 
 
 # =========================
@@ -198,6 +258,14 @@ def hotel_agent(state: TravelState):
 # =========================
 
 def itinerary_agent(state: TravelState):
+    print("\n" + "="*50)
+    print("🗺️ [ITINERARY AGENT] Started")
+    print("="*50)
+
+    flight_info = str(state.get("flight_results", ""))[:2000]
+    hotel_info = str(state.get("hotel_results", ""))[:2500]
+    weather_info = str(state.get("weather_results", ""))[:1500]
+
     prompt = f"""
 Create a complete travel itinerary.
 
@@ -205,10 +273,13 @@ User Query:
 {state['user_query']}
 
 Flight Results:
-{state['flight_results']}
+{flight_info}
 
 Hotel Results:
-{state['hotel_results']}
+{hotel_info}
+
+Weather Results:
+{weather_info}
 
 Make the itinerary practical, budget-aware, and easy to follow.
 """
@@ -218,6 +289,8 @@ Make the itinerary practical, budget-aware, and easy to follow.
         HumanMessage(content=prompt)
     ])
 
+    print("✅ [ITINERARY AGENT] Itinerary generated successfully")
+
     return {
         "itinerary": response.content,
         "messages": [response],
@@ -225,12 +298,20 @@ Make the itinerary practical, budget-aware, and easy to follow.
     }
 
 
-
 # =========================
 # Final Response Agent
 # =========================
 
 def final_agent(state: TravelState):
+    print("\n" + "="*50)
+    print("📋 [FINAL AGENT] Started")
+    print("="*50)
+
+    flight_info = str(state.get("flight_results", ""))[:2000]
+    hotel_info = str(state.get("hotel_results", ""))[:2500]
+    weather_info = str(state.get("weather_results", ""))[:1500]
+    itinerary_info = str(state.get("itinerary", ""))[:3000]
+
     final_prompt = f"""
 Generate the final travel response for the user.
 
@@ -238,26 +319,32 @@ User Request:
 {state['user_query']}
 
 Flights:
-{state['flight_results']}
+{flight_info}
 
 Hotels:
-{state['hotel_results']}
+{hotel_info}
+
+Weather:
+{weather_info}
 
 Itinerary:
-{state['itinerary']}
+{itinerary_info}
 
 Format the final answer beautifully using these sections:
 
 1. Trip Summary
 2. Flight Information
 3. Hotel Suggestions
-4. Day-by-Day Itinerary
-5. Estimated Budget
-6. Final Recommendations
+4. Weather Information
+5. Day-by-Day Itinerary
+6. Estimated Budget
+7. Final Recommendations
+
 
 Important:
 - Be clear and practical.
 - Mention that live flight API may not provide ticket prices if pricing is unavailable.
+- Include weather-based travel advice.
 - Keep the response useful for real travel planning.
 """
 
@@ -265,6 +352,9 @@ Important:
         SystemMessage(content="You are a professional AI travel booking assistant."),
         HumanMessage(content=final_prompt)
     ])
+
+    print("✅ [FINAL AGENT] Final travel guide generated successfully")
+    print("="*50 + "\n")
 
     return {
         "messages": [response],
@@ -276,19 +366,21 @@ Important:
 # Build Graph
 # =========================
 
+
 graph = StateGraph(TravelState)
 
 graph.add_node("flight_agent", flight_agent)
 graph.add_node("hotel_agent", hotel_agent)
+graph.add_node("weather_agent", weather_agent)
 graph.add_node("itinerary_agent", itinerary_agent)
 graph.add_node("final_agent", final_agent)
 
 graph.add_edge(START, "flight_agent")
 graph.add_edge("flight_agent", "hotel_agent")
-graph.add_edge("hotel_agent", "itinerary_agent")
+graph.add_edge("hotel_agent", "weather_agent")
+graph.add_edge("weather_agent", "itinerary_agent")
 graph.add_edge("itinerary_agent", "final_agent")
 graph.add_edge("final_agent", END)
-
 
 # =========================
 # PostgreSQL Checkpointer
@@ -330,6 +422,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
             "user_query": user_input,
             "flight_results": "",
             "hotel_results": "",
+            "weather_results":"",
             "itinerary": "",
             "llm_calls": 0
         },
@@ -343,6 +436,7 @@ def run_travel_agent(user_input: str, thread_id: str | None = None):
         "answer": final_answer,
         "flight_results": result.get("flight_results", ""),
         "hotel_results": result.get("hotel_results", ""),
+        "weather_results": result.get("weather_results", ""),
         "itinerary": result.get("itinerary", ""),
         "llm_calls": result.get("llm_calls", 0),
     }

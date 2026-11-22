@@ -59,10 +59,13 @@ def get_forecast(city: str):
 
     data = response.json()
 
+    if response.status_code != 200:
+        return data
+
     forecast = []
 
     # Return first 5 forecast entries
-    for item in data["list"][:5]:
+    for item in data.get("list", [])[:5]:
 
         forecast.append(
             {
