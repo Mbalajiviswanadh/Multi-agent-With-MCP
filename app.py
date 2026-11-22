@@ -14,7 +14,13 @@ import uuid
 from fastapi.responses import StreamingResponse
 from langchain_core.messages import HumanMessage
 
+# This is to allow nested event loops for async calls in FastAPI
+import nest_asyncio
+nest_asyncio.apply()
+
+
 TRAVEL_AGENTS = ["flight_agent", "hotel_agent", "itinerary_agent", "final_agent"]
+
 
 
 # =========================
